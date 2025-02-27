@@ -4,7 +4,7 @@ import os
 import subprocess
 import sys
 import Bio.PDB.PDBParser as PDBParser
-from visualize_original import visualize_heatmap
+from visualize_script import visualize_heatmap
 
 
 def get_fixed_positions(pdb, original=False):
@@ -82,7 +82,7 @@ def get_fixed_positions(pdb, original=False):
     return chains_to_design, fixed_positions, nano_start, nano_end
 
 
-def main(original=False, conditional=False, chains_to_design="A", fixed_positions="1,2,3,4,5,6,7,8,9,10", folder_with_pdbs="../inputs/PDB_complexes/pdbs/pdbs/"):
+def main(original=False, unconditional_only=False, conditional_only=False, seq_score_only=False, chains_to_design="A", fixed_positions="1,2,3,4,5,6,7,8,9,10", folder_with_pdbs="../inputs/PDB_complexes/pdbs/pdbs/"):
     # Activate the conda environment
     # Note: Activating a conda environment within a Python script is not straightforward.
     # It's recommended to activate the environment before running this script.
@@ -145,10 +145,10 @@ def main(original=False, conditional=False, chains_to_design="A", fixed_position
             "--sampling_temp", "0.1",
             "--seed", "37",
             "--batch_size", "1",
-            # "--save_probs", "1",
-            # "--conditional_probs_only", "1"
-            # "--score_only", "1",
-            "--unconditional_probs_only", f"{int(not conditional)}",
+            "--save_probs", f"{int(seq_score_only)}",
+            "--conditional_probs_only", f"{int(conditional_only)}",
+            # "--score_only", f"{int(seq_score_only)}",
+            "--unconditional_probs_only", f"{int(unconditional_only)}",
         ]
     ]
 
@@ -165,10 +165,17 @@ def main(original=False, conditional=False, chains_to_design="A", fixed_position
     return output_dir
 
 if __name__ == "__main__":
-    original = True
-    conditional = False
+    original = False
+    unconditional_only = True
+    conditional_only = False
+    seq_score_only = False
+
+    if seq_score_only:
+        if unconditional_only or conditional_only:
+            raise ValueError("Please specify either seq_score_only or unconditional_only/conditional_only")
+
     # Define the folder with PDB files
-    folder_with_pdbs_folder = "../inputs/PDB_complexes/pdbs/pdbs"
+    folder_with_pdbs_folder = "../inputs/PDB_complexes/pdbs/new_pdbs"
     # Loop through the files in the folder
     for folder in os.listdir(folder_with_pdbs_folder):
         for file in os.listdir(os.path.join(folder_with_pdbs_folder, folder)):
@@ -178,5 +185,7 @@ if __name__ == "__main__":
             print(f"Chains to design: {chains_to_design}")
             print(f"Fixed positions: {fixed_positions}")
             print(f"Folder with PDBs: {folder_with_pdbs}")
-            output_dir = main(original=original, conditional=conditional, chains_to_design=chains_to_design, fixed_positions=fixed_positions, folder_with_pdbs=folder_with_pdbs)
-            visualize_heatmap(original=original, conditional=conditional, output_dir=output_dir, start_nano_len=nano_start, end_nano_len=nano_end)
+            output_dir = main(original=original, unconditional_only=unconditional_only, conditional_only=conditional_only, seq_score_only=seq_score_only, chains_to_design=chains_to_design, fixed_positions=fixed_positions, folder_with_pdbs=folder_with_pdbs)
+            if seq_score_only:
+                continue
+            visualize_heatmap(original=original, unconditional_only=unconditional_only, conditional_only=conditional_only, output_dir=output_dir, start_nano_len=nano_start, end_nano_len=nano_end)
