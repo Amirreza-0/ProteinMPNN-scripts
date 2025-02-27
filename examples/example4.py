@@ -5,6 +5,8 @@ import subprocess
 import sys
 import Bio.PDB.PDBParser as PDBParser
 from visualize_script import visualize_heatmap
+import numpy as np
+from KL_divergence import calculate_kl_divergence
 
 
 def get_fixed_positions(pdb, original=False):
@@ -21,26 +23,33 @@ def get_fixed_positions(pdb, original=False):
     for model in structure:
         for chain in model:
             print(list(chain.get_residues()))
-
+            n = 0
             # remove all hetero atoms
-            for residue in list(chain.get_residues()):
+            for i, residue in enumerate(list(chain.get_residues())):
+                id_1 = int(residue.id[1])
+                if i != len(list(chain.get_residues())) - 1:
+                    id2 = int(list(chain.get_residues())[i+1].id[1])
+                    if id2 - id_1 != 1:
+                        n += id2 - id_1 - 1
+
                 if residue.id[0] != " ":
                     chain.detach_child(residue.id)
+
 
             # Get the chain ID
             chain_id = chain.id
             # Count the number of residues in the chain
             residue_count = len(list(chain.get_residues()))
-
-            print(f"Chain {chain_id} has {residue_count} residues.")
             # Store the chain ID and its length
-            chain_lengths[chain_id] = residue_count
+            chain_lengths[chain_id] = residue_count  + n
+            print(f"Chain {chain_id} has {chain_lengths[chain_id]} residues.")
 
     # get chain names
     chain_names = list(chain_lengths.keys())
 
     # Get the lengths of chains A and second chain
     chain_A_len = chain_lengths["A"]
+    print(f"{pdb} Nano chain A len: {chain_A_len}")
     if "B" in chain_names:
         nano_chain_len = chain_lengths["B"]
     else:
@@ -53,7 +62,7 @@ def get_fixed_positions(pdb, original=False):
         fixed_positions_A = " ".join(str(i) for i in range(1, chain_A_len))  # 1 to 293
         fixed_positions_B = []
 
-        # Loop through numbers from 1 to 117
+        # Loop through numbers from 1 to 117 (length of chain B)
         for i in range(1, nano_chain_len):
             # Check if the current number is NOT in the excluded ranges
             if not ((28 <= i <= 34) or (54 <= i <= 58) or (100 <= i <= 111)):
@@ -79,10 +88,12 @@ def get_fixed_positions(pdb, original=False):
     nano_end = chain_A_len + nano_chain_len
 
 
+
+
     return chains_to_design, fixed_positions, nano_start, nano_end
 
 
-def main(original=False, unconditional_only=False, conditional_only=False, seq_score_only=False, chains_to_design="A", fixed_positions="1,2,3,4,5,6,7,8,9,10", folder_with_pdbs="../inputs/PDB_complexes/pdbs/pdbs/"):
+def main(file, original=False, unconditional_only=False, conditional_only=False, seq_score_only=False, chains_to_design="A", fixed_positions="1,2,3,4,5,6,7,8,9,10", folder_with_pdbs="../inputs/PDB_complexes/pdbs/pdbs/"):
     # Activate the conda environment
     # Note: Activating a conda environment within a Python script is not straightforward.
     # It's recommended to activate the environment before running this script.
@@ -96,10 +107,11 @@ def main(original=False, unconditional_only=False, conditional_only=False, seq_s
     # folder_with_pdbs = "../inputs/PDB_complexes/pdbs/pdbs"
     folder_with_pdbs = folder_with_pdbs
 
+    # the {file} is the name of the pdb file comes from the loop
     if original:
-        output_dir = f"../outputs/example_4_outputs_original/{file}"
+        output_dir = f"../outputs/example_4_outputs_original/{file.split('.')[0]}"
     else:
-        output_dir = f"../outputs/example_4_outputs/{file}"
+        output_dir = f"../outputs/example_4_outputs/{file.split('.')[0]}"
 
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
@@ -141,7 +153,7 @@ def main(original=False, unconditional_only=False, conditional_only=False, seq_s
             "--chain_id_jsonl", path_for_assigned_chains,
             "--fixed_positions_jsonl", path_for_fixed_positions,
             "--out_folder", output_dir,
-            "--num_seq_per_target", "1",
+            "--num_seq_per_target", "10" if seq_score_only else "1",
             "--sampling_temp", "0.1",
             "--seed", "37",
             "--batch_size", "1",
@@ -175,7 +187,11 @@ if __name__ == "__main__":
             raise ValueError("Please specify either seq_score_only or unconditional_only/conditional_only")
 
     # Define the folder with PDB files
-    folder_with_pdbs_folder = "../inputs/PDB_complexes/pdbs/new_pdbs"
+    if original:
+        folder_with_pdbs_folder = "../inputs/PDB_complexes/pdbs/original_structures"
+    else:
+        folder_with_pdbs_folder = "../inputs/PDB_complexes/pdbs/new_pdbs"
+
     # Loop through the files in the folder
     for folder in os.listdir(folder_with_pdbs_folder):
         for file in os.listdir(os.path.join(folder_with_pdbs_folder, folder)):
@@ -185,7 +201,10 @@ if __name__ == "__main__":
             print(f"Chains to design: {chains_to_design}")
             print(f"Fixed positions: {fixed_positions}")
             print(f"Folder with PDBs: {folder_with_pdbs}")
-            output_dir = main(original=original, unconditional_only=unconditional_only, conditional_only=conditional_only, seq_score_only=seq_score_only, chains_to_design=chains_to_design, fixed_positions=fixed_positions, folder_with_pdbs=folder_with_pdbs)
+            output_dir = main(file=file, original=original, unconditional_only=unconditional_only, conditional_only=conditional_only, seq_score_only=seq_score_only, chains_to_design=chains_to_design, fixed_positions=fixed_positions, folder_with_pdbs=folder_with_pdbs)
             if seq_score_only:
                 continue
-            visualize_heatmap(original=original, unconditional_only=unconditional_only, conditional_only=conditional_only, output_dir=output_dir, start_nano_len=nano_start, end_nano_len=nano_end)
+            # if not original:
+            #     calculate_kl_divergence(output_dir=output_dir, unconditional_only=unconditional_only, conditional_only=conditional_only)
+            visualize_heatmap(original=original, unconditional_only=unconditional_only,
+                              conditional_only=conditional_only, output_dir=output_dir, start_nano_len=nano_start, end_nano_len=nano_end)
