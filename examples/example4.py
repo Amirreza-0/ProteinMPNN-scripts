@@ -11,6 +11,25 @@ from KL_divergence import calculate_kl_divergence
 
 def get_fixed_positions(pdb, original=False):
 
+    fixed_positions_map = {
+        "8ee2": {
+            "original": [(28, 34), (54, 58), (100, 111)],
+            "mutated": [(25, 31), (51, 55), (97, 108)]
+        },
+        "7olz": {
+            "original": [(23, 35), (50, 64), (99, 116)],
+            "mutated": [(23, 35), (50, 64), (99, 116)]
+        },
+        "8q7s": {
+            "original": [(23, 34), (46, 64), (98, 118)],
+            "mutated": [(22, 33), (45, 63), (97, 117)]
+        },
+        "8q93": {
+            "original": [(23, 35), (51, 64), (99, 119)],
+            "mutated": [(23, 35), (51, 64), (99, 119)]
+        }
+    }
+
     # open the pdb file
     parser = PDBParser()
     structure = parser.get_structure("protein", pdb)
@@ -59,23 +78,38 @@ def get_fixed_positions(pdb, original=False):
     if original:
         # conditions for original
         chains_to_design = "A C"
-        fixed_positions_A = " ".join(str(i) for i in range(1, chain_A_len))  # 1 to 293
+        fixed_positions_A = " ".join(str(i) for i in range(1, chain_A_len))
         fixed_positions_B = []
 
-        # Loop through numbers from 1 to 117 (length of chain B)
-        for i in range(1, nano_chain_len):
-            # Check if the current number is NOT in the excluded ranges
-            if not ((28 <= i <= 34) or (54 <= i <= 58) or (100 <= i <= 111)):
-                fixed_positions_B.append(i)  # Append the number to list2
+        # Use fixed_positions_map to get excluded ranges based on pdb id
+        pdb_id = os.path.basename(pdb)[:4].lower()
+        excluded_ranges = fixed_positions_map[pdb_id]["original"]
 
-        fixed_positions_B = [x - 3 for x in fixed_positions_B][3:]  # 1 to 117
+        # Loop through numbers from 1 to length of chain B and exclude positions in the ranges
+        for i in range(1, nano_chain_len):
+            if not any(start <= i <= end for start, end in excluded_ranges):
+                fixed_positions_B.append(i)
+
+        fixed_positions_B = [x - 3 for x in fixed_positions_B][3:]
         fixed_positions_B = " ".join(str(i) for i in fixed_positions_B)
 
     else:
-        # conditions for long names
+        # conditions for mutated
         chains_to_design = "A B"
-        fixed_positions_A = " ".join(str(i) for i in range(1, chain_A_len))  # 1 to 143
-        fixed_positions_B = " ".join(str(i) for i in range(1, nano_chain_len))  # 1 to 110
+        fixed_positions_A = " ".join(str(i) for i in range(1, chain_A_len))
+        # fixed_positions_B = " ".join(str(i) for i in range(1, nano_chain_len))
+
+        # Use fixed_positions_map to get excluded ranges based on pdb id
+        pdb_id = os.path.basename(pdb)[:4].lower()
+        excluded_ranges = fixed_positions_map[pdb_id]["mutated"]
+
+        # Loop through numbers from 1 to length of chain B and exclude positions in the ranges
+        fixed_positions_B = []
+        for i in range(1, nano_chain_len):
+            if not any(start <= i <= end for start, end in excluded_ranges):
+                fixed_positions_B.append(i)
+        fixed_positions_B = " ".join(str(i) for i in fixed_positions_B)
+
 
     fixed_positions = f"{fixed_positions_A}, {fixed_positions_B}"
     # remove the parantheses
@@ -204,7 +238,7 @@ if __name__ == "__main__":
             output_dir = main(file=file, original=original, unconditional_only=unconditional_only, conditional_only=conditional_only, seq_score_only=seq_score_only, chains_to_design=chains_to_design, fixed_positions=fixed_positions, folder_with_pdbs=folder_with_pdbs)
             if seq_score_only:
                 continue
-            # if not original:
-            #     calculate_kl_divergence(output_dir=output_dir, unconditional_only=unconditional_only, conditional_only=conditional_only)
+            if not original:
+                calculate_kl_divergence(output_dir=output_dir, unconditional_only=unconditional_only, conditional_only=conditional_only)
             visualize_heatmap(original=original, unconditional_only=unconditional_only,
                               conditional_only=conditional_only, output_dir=output_dir, start_nano_len=nano_start, end_nano_len=nano_end)
