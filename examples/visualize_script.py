@@ -180,4 +180,4 @@ def visualize_heatmap(original=False, unconditional_only=False, conditional_only
         plt.close()
 
 if __name__ == "__main__":
-    visualize_heatmap(original=False, conditional=False)
+    visualize_heatmap(original=False, unconditional_only=False, conditional_only=False)
