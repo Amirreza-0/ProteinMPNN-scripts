@@ -47,6 +47,10 @@ def visualize_heatmap(original=False, unconditional_only=False, conditional_only
     nano_seqs = []
     soft_probs = []
     for f in glob.glob(f"{path}/*.npz"):
+
+        if "kl_divergence" in f:
+            visualize_kl_divergence(f)
+            continue
         # Load the .npz file
         with np.load(f) as data:
             for key in data.files:
@@ -109,6 +113,8 @@ def visualize_heatmap(original=False, unconditional_only=False, conditional_only
 
     # Plot the softmax heatmap of probabilities for each numpy array
     for i, f in enumerate(glob.glob(f"{path}/*.npz")):
+        if "kl_divergence" in f:
+            continue
         if len(soft_probs[i][0].shape) == 1:
             soft_prob = soft_probs[i]
         else:
@@ -178,6 +184,152 @@ def visualize_heatmap(original=False, unconditional_only=False, conditional_only
         plt.savefig(f"{f}.png")
         plt.show()
         plt.close()
+
+
+def visualize_kl_divergence(npz_file, plot_type='both', top_n=5):
+    """
+    Visualize KL divergence values from an NPZ file.
+
+    Parameters:
+    -----------
+    npz_file : str
+        Path to the NPZ file containing KL divergence data
+    plot_type : str, optional
+        Type of plot to generate: 'bar', 'line', or 'both' (default)
+    top_n : int, optional
+        Number of highest values to highlight
+
+    Returns:
+    --------
+    dict
+        Dictionary containing the positions and values of the top N highest KL divergence values
+    """
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from matplotlib.ticker import MaxNLocator
+    import os
+
+    # Load the .npz file
+    with np.load(npz_file) as data:
+        # Extract data
+        kl_divergence = data["kl_divergence"]
+        S = data["S"]
+        print(f"KL divergence shape: {kl_divergence.shape}")
+        print(f"S shape: {S.shape}")
+
+        # Reshape kl_divergence to 2D if needed
+        kl_divergence = kl_divergence.reshape(kl_divergence.shape[0], -1)
+
+        # Compute average KL divergence per position if more than one value per position
+        if kl_divergence.shape[1] > 1:
+            kl_vals = np.mean(kl_divergence, axis=1)
+        else:
+            kl_vals = kl_divergence.flatten()
+
+        positions = np.arange(len(kl_vals))
+
+        # Find indices of top N values
+        top_indices = np.argsort(kl_vals)[-top_n:][::-1]
+        top_values = kl_vals[top_indices]
+
+        # Base filename for saving plots
+        base_filename = os.path.splitext(npz_file)[0]
+
+        # Create bar plot
+        if plot_type in ['bar', 'both']:
+            plt.figure(figsize=(14, 7))
+            bars = plt.bar(positions, kl_vals, color='steelblue', alpha=0.7)
+
+            # Highlight top N values
+            for idx in top_indices:
+                bars[idx].set_color('red')
+                bars[idx].set_alpha(1.0)
+
+            # Add value labels only for top N bars to avoid clutter
+            for idx in top_indices:
+                height = kl_vals[idx]
+                plt.text(idx, height, f'Pos {idx}: {height:.3f}',
+                         ha='center', va='bottom', fontsize=10, fontweight='bold')
+
+            plt.title(f"KL Divergence by Position - Top {top_n} Highlighted", fontsize=14)
+            plt.xlabel("Position", fontsize=12)
+            plt.ylabel("KL Divergence", fontsize=12)
+            plt.grid(axis='y', linestyle='--', alpha=0.7)
+
+            # Add legend for highlighted values
+            from matplotlib.patches import Patch
+            legend_elements = [
+                Patch(facecolor='steelblue', alpha=0.7, label='Regular Values'),
+                Patch(facecolor='red', label=f'Top {top_n} Values')
+            ]
+            plt.legend(handles=legend_elements, loc='upper right')
+
+            # If there are many positions, limit the x-axis ticks
+            if len(positions) > 20:
+                plt.gca().xaxis.set_major_locator(MaxNLocator(20))
+
+            plt.tight_layout()
+            plt.savefig(f"{base_filename}_bar_plot.png", dpi=300)
+            plt.show()
+            plt.close()
+
+        # Create line plot (better for larger sequences)
+        if plot_type in ['line', 'both']:
+            plt.figure(figsize=(14, 7))
+
+            # Plot the main line
+            plt.plot(positions, kl_vals, color='steelblue', linewidth=2, alpha=0.8)
+
+            # Highlight the top N points
+            plt.scatter(top_indices, top_values, color='red', s=100, zorder=5)
+
+            # Add annotations for top points
+            for i, (idx, val) in enumerate(zip(top_indices, top_values)):
+                # Alternate annotation positions to avoid overlap
+                vert_offset = 0.02 * max(kl_vals) * (1 if i % 2 == 0 else 1.5)
+                plt.annotate(f'Pos {idx}: {val:.3f}',
+                             xy=(idx, val),
+                             xytext=(idx, val + vert_offset),
+                             fontsize=10,
+                             ha='center',
+                             va='bottom',
+                             fontweight='bold',
+                             arrowprops=dict(arrowstyle='->', lw=1.5, color='black', alpha=0.7))
+
+            plt.title(f"KL Divergence by Position - Top {top_n} Highlighted", fontsize=14)
+            plt.xlabel("Position", fontsize=12)
+            plt.ylabel("KL Divergence", fontsize=12)
+            plt.grid(True, linestyle='--', alpha=0.7)
+
+            # Add legend
+            from matplotlib.lines import Line2D
+            legend_elements = [
+                Line2D([0], [0], color='steelblue', lw=2, label='KL Divergence'),
+                Line2D([0], [0], marker='o', color='w', markerfacecolor='red',
+                       markersize=10, label=f'Top {top_n} Values')
+            ]
+            plt.legend(handles=legend_elements, loc='upper right')
+
+            # If there are many positions, limit the x-axis ticks
+            if len(positions) > 20:
+                plt.gca().xaxis.set_major_locator(MaxNLocator(20))
+
+            plt.tight_layout()
+            plt.savefig(f"{base_filename}_line_plot.png", dpi=300)
+            plt.show()
+            plt.close()
+
+        # Return information about top values
+        top_info = {
+            'positions': top_indices.tolist(),
+            'values': top_values.tolist()
+        }
+
+        print(f"\nTop {top_n} KL divergence values:")
+        for i, (pos, val) in enumerate(zip(top_indices, top_values), 1):
+            print(f"{i}. Position {pos}: {val:.4f}")
+
+        return top_info
 
 if __name__ == "__main__":
     visualize_heatmap(original=False, unconditional_only=False, conditional_only=False)
