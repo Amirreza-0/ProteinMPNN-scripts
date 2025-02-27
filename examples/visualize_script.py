@@ -20,7 +20,7 @@ def softmax(x):
     e_x = np.exp(x - np.max(x, axis=1, keepdims=True))
     return e_x / np.sum(e_x, axis=1, keepdims=True)
 
-def visualize_heatmap(original=False, conditional=False, start_nano_len=0, end_nano_len=0, output_dir=None):
+def visualize_heatmap(original=False, unconditional_only=False, conditional_only=False,  start_nano_len=0, end_nano_len=0, output_dir=None):
 
     if original:
         # parent_path = "../outputs/example_4_outputs_original"
@@ -36,10 +36,13 @@ def visualize_heatmap(original=False, conditional=False, start_nano_len=0, end_n
         # start_nano_len = 117
         # end_nano_len = 143
 
-    if conditional:
+    if unconditional_only:
+        path = f"{parent_path}/unconditional_probs_only"
+    elif conditional_only:
         path = f"{parent_path}/conditional_probs_only"
     else:
-        path = f"{parent_path}/unconditional_probs_only"
+        raise ValueError("Please specify either unconditional_only or conditional_only")
+
 
     nano_seqs = []
     soft_probs = []
@@ -155,8 +158,8 @@ def visualize_heatmap(original=False, conditional=False, start_nano_len=0, end_n
         for start, end, cdr in cdr_positions:
             plt.axhline(y=start, color='red', linestyle='--', label=f'{cdr} start')
             plt.axhline(y=end, color='red', linestyle='--', label=f'{cdr} end')
-            plt.text(-0.5, start, f'{cdr} ↓      ', color='red', va='center', ha='right')
-            plt.text(-0.5, end, f'{cdr} ↑      ', color='red', va='center', ha='right')
+            plt.text(-0.5, start, f'{cdr} ↓        ', color='red', va='center', ha='right')
+            plt.text(-0.5, end, f'{cdr} ↑        ', color='red', va='center', ha='right')
 
         for i in range(len(alphabet)):
             plt.axvline(i, color="gray", linestyle="--", linewidth=0.7)
