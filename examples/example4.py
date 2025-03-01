@@ -6,30 +6,10 @@ import sys
 import Bio.PDB.PDBParser as PDBParser
 from visualize_script import visualize_heatmap
 import numpy as np
-from KL_divergence import calculate_kl_divergence
+from KL_divergence import calculate_symmetrized_kl_divergence, calculate_Shanon_entropy, calculate_CDR_score
 
 
-def get_fixed_positions(pdb, original=False):
-
-    fixed_positions_map = {
-        "8ee2": {
-            "original": [(28, 34), (54, 58), (100, 111)],
-            "mutated": [(25, 31), (51, 55), (97, 108)]
-        },
-        "7olz": {
-            "original": [(23, 35), (50, 64), (99, 116)],
-            "mutated": [(23, 35), (50, 64), (99, 116)]
-        },
-        "8q7s": {
-            "original": [(23, 34), (46, 64), (98, 118)],
-            "mutated": [(22, 33), (45, 63), (97, 117)]
-        },
-        "8q93": {
-            "original": [(23, 35), (51, 64), (99, 119)],
-            "mutated": [(23, 35), (51, 64), (99, 119)]
-        }
-    }
-
+def get_fixed_positions(pdb, original=False, fixed_positions_map=None, fix_all=False):
     # open the pdb file
     parser = PDBParser()
     structure = parser.get_structure("protein", pdb)
@@ -80,35 +60,47 @@ def get_fixed_positions(pdb, original=False):
         chains_to_design = "A C"
         fixed_positions_A = " ".join(str(i) for i in range(1, chain_A_len))
         fixed_positions_B = []
+        masked_positions = []
 
         # Use fixed_positions_map to get excluded ranges based on pdb id
         pdb_id = os.path.basename(pdb)[:4].lower()
         excluded_ranges = fixed_positions_map[pdb_id]["original"]
 
-        # Loop through numbers from 1 to length of chain B and exclude positions in the ranges
-        for i in range(1, nano_chain_len):
-            if not any(start <= i <= end for start, end in excluded_ranges):
-                fixed_positions_B.append(i)
+        if not fix_all:
+            # Loop through numbers from 1 to length of chain B and exclude positions in the ranges
+            for i in range(1, nano_chain_len):
+                if not any(start <= i <= end for start, end in excluded_ranges):
+                    fixed_positions_B.append(i)
+                else:
+                    masked_positions.append(i)
 
-        fixed_positions_B = [x - 3 for x in fixed_positions_B][3:]
-        fixed_positions_B = " ".join(str(i) for i in fixed_positions_B)
+            fixed_positions_B = [x - 3 for x in fixed_positions_B][3:]
+            fixed_positions_B = " ".join(str(i) for i in fixed_positions_B)
+        else:
+            fixed_positions_B = " ".join(str(i) for i in range(1, nano_chain_len))
 
     else:
         # conditions for mutated
         chains_to_design = "A B"
         fixed_positions_A = " ".join(str(i) for i in range(1, chain_A_len))
         # fixed_positions_B = " ".join(str(i) for i in range(1, nano_chain_len))
+        fixed_positions_B = []
+        masked_positions = []
 
         # Use fixed_positions_map to get excluded ranges based on pdb id
         pdb_id = os.path.basename(pdb)[:4].lower()
         excluded_ranges = fixed_positions_map[pdb_id]["mutated"]
 
-        # Loop through numbers from 1 to length of chain B and exclude positions in the ranges
-        fixed_positions_B = []
-        for i in range(1, nano_chain_len):
-            if not any(start <= i <= end for start, end in excluded_ranges):
-                fixed_positions_B.append(i)
-        fixed_positions_B = " ".join(str(i) for i in fixed_positions_B)
+        if not fix_all:
+            # Loop through numbers from 1 to length of chain B and exclude positions in the ranges
+            for i in range(1, nano_chain_len):
+                if not any(start <= i <= end for start, end in excluded_ranges):
+                    fixed_positions_B.append(i)
+                else:
+                    masked_positions.append(i)
+            fixed_positions_B = " ".join(str(i) for i in fixed_positions_B)
+        else:
+            fixed_positions_B = " ".join(str(i) for i in range(1, nano_chain_len))
 
 
     fixed_positions = f"{fixed_positions_A}, {fixed_positions_B}"
@@ -121,10 +113,7 @@ def get_fixed_positions(pdb, original=False):
     # get whole length
     nano_end = chain_A_len + nano_chain_len
 
-
-
-
-    return chains_to_design, fixed_positions, nano_start, nano_end
+    return chains_to_design, fixed_positions, masked_positions, nano_start, nano_end, excluded_ranges
 
 
 def main(file, original=False, unconditional_only=False, conditional_only=False, seq_score_only=False, chains_to_design="A", fixed_positions="1,2,3,4,5,6,7,8,9,10", folder_with_pdbs="../inputs/PDB_complexes/pdbs/pdbs/"):
@@ -192,6 +181,7 @@ def main(file, original=False, unconditional_only=False, conditional_only=False,
             "--seed", "37",
             "--batch_size", "1",
             "--save_probs", f"{int(seq_score_only)}",
+            "--save_score", f"{int(seq_score_only)}",
             "--conditional_probs_only", f"{int(conditional_only)}",
             # "--score_only", f"{int(seq_score_only)}",
             "--unconditional_probs_only", f"{int(unconditional_only)}",
@@ -202,7 +192,7 @@ def main(file, original=False, unconditional_only=False, conditional_only=False,
     for cmd in commands:
         try:
             print(f"Executing: {' '.join(cmd)}")
-            subprocess.run(cmd, check=True)
+            subprocess.run(cmd, check=True, errors=True)
         except subprocess.CalledProcessError as e:
             print(f"An error occurred while executing: {' '.join(cmd)}", file=sys.stderr)
             sys.exit(e.returncode)
@@ -211,14 +201,24 @@ def main(file, original=False, unconditional_only=False, conditional_only=False,
     return output_dir
 
 if __name__ == "__main__":
-    original = False
-    unconditional_only = True
+    original = True
+    unconditional_only = False
     conditional_only = False
-    seq_score_only = False
+    seq_score_only = True
+    default = True
+
+    if unconditional_only:
+        fix_all = True
+    else:
+        fix_all = False
 
     if seq_score_only:
         if unconditional_only or conditional_only:
             raise ValueError("Please specify either seq_score_only or unconditional_only/conditional_only")
+
+    if default:
+        if unconditional_only or conditional_only:
+            raise ValueError("Please specify either default or unconditional_only/conditional_only")
 
     # Define the folder with PDB files
     if original:
@@ -226,19 +226,42 @@ if __name__ == "__main__":
     else:
         folder_with_pdbs_folder = "../inputs/PDB_complexes/pdbs/new_pdbs"
 
+    fixed_positions_map = {
+        "8ee2": {
+            "original": [(28, 34), (54, 58), (100, 111)],
+            "mutated": [(25, 31), (51, 55), (97, 108)]
+        },
+        "7olz": {
+            "original": [(23, 35), (50, 64), (99, 116)],
+            "mutated": [(23, 35), (50, 64), (99, 116)]
+        },
+        "8q7s": {
+            "original": [(23, 34), (46, 64), (98, 118)],
+            "mutated": [(22, 33), (45, 63), (97, 117)]
+        },
+        "8q93": {
+            "original": [(23, 35), (51, 64), (99, 119)],
+            "mutated": [(23, 35), (51, 64), (99, 119)]
+        }
+    }
+
+
     # Loop through the files in the folder
     for folder in os.listdir(folder_with_pdbs_folder):
         for file in os.listdir(os.path.join(folder_with_pdbs_folder, folder)):
             folder_with_pdbs = os.path.join(folder_with_pdbs_folder, folder)
             # Get the fixed positions
-            chains_to_design, fixed_positions, nano_start, nano_end = get_fixed_positions(os.path.join(folder_with_pdbs, file), original=original)
+            chains_to_design, fixed_positions, masked_positions, nano_start, nano_end, cdr_ranges = get_fixed_positions(os.path.join(folder_with_pdbs, file), original=original, fixed_positions_map=fixed_positions_map, fix_all=fix_all)
             print(f"Chains to design: {chains_to_design}")
-            print(f"Fixed positions: {fixed_positions}")
             print(f"Folder with PDBs: {folder_with_pdbs}")
+            print(f"Fixed positions: {fixed_positions}")
+
             output_dir = main(file=file, original=original, unconditional_only=unconditional_only, conditional_only=conditional_only, seq_score_only=seq_score_only, chains_to_design=chains_to_design, fixed_positions=fixed_positions, folder_with_pdbs=folder_with_pdbs)
+            calculate_CDR_score(output_dir=output_dir, cdr_ranges=cdr_ranges, unconditional_only=unconditional_only, conditional_only=conditional_only, default_mode=default, nano_start=nano_start, nano_end=nano_end)
             if seq_score_only:
                 continue
             if not original:
-                calculate_kl_divergence(output_dir=output_dir, unconditional_only=unconditional_only, conditional_only=conditional_only)
+                calculate_symmetrized_kl_divergence(output_dir=output_dir, unconditional_only=unconditional_only, conditional_only=conditional_only, default_mode=default)
+                calculate_Shanon_entropy(output_dir=output_dir, unconditional_only=unconditional_only, conditional_only=conditional_only, default_mode=default)
             visualize_heatmap(original=original, unconditional_only=unconditional_only,
-                              conditional_only=conditional_only, output_dir=output_dir, start_nano_len=nano_start, end_nano_len=nano_end)
+                              conditional_only=conditional_only, output_dir=output_dir, start_nano_len=nano_start, end_nano_len=nano_end, cdr_ranges=cdr_ranges, masked_positions=masked_positions)
